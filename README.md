@@ -1,7 +1,3 @@
-# cs3300-project1
-
-This is the private repository for CS 3300 project 1.
-
 ## Dataset Info
 
 Highest Charting Position: The highest position that the song has been on in the Spotify Top 200 Weekly Global Charts in 2020 & 2021.
