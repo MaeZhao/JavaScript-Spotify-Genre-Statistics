@@ -1,0 +1,432 @@
+<!-- Author: Lux Zhang, Luis Enriquez, Mae Zhao, Nick Rutletdge -->
+<!-- NetID: yz862, lae66, mmz25, njr48 -->
+<!-- Date: 09/27/2021 -->
+<html>
+
+<head>
+    <title>CS3300 P1</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="styles/stylesheet.css">
+    <!-- <link rel="stylesheet" href="normalize.css"> -->
+</head>
+
+<body>
+    <div class="container">
+
+        <div id="title" >
+            <h1 >Spotify Genre Frequency and Statistics</h1>
+            <h2 >Top 200 Songs from 2020 to 2021</h2>
+            <h3>By Mae(mmz25), Lux(yz862), Nick(njr48), and Luis(lae66)</h3>
+
+        </div>
+        <div class="board" id="b1">
+            <div class="inline">
+                <div class="line left"></div>
+                <h2>Count/Frequency of Genres in Spotify Songs</h2>
+                <div class="line right"></div>
+            </div>
+            <div class="inline">
+                <div class="left"></div>
+                <svg class="graph center" id="svgb1" width="950" height="500"></svg>
+                <div class="right">
+                    <div id='legend' class="graph">
+                        <h2>Genre Categories</h2>
+                        <p><span class='pop'>Pop</span><br><span class='latin'>Latin</span><br><span class="rap">Rap</span></p>
+                    </div>
+                </div>
+
+            </div>
+            
+            <div class="inline">
+                <div class="line left"></div>
+                <h2>Median Values of Pop, Rap and Latin Music</h2>
+                <div class="line right"></div>
+            </div>
+            <div id = "gauge" class="graph inline">
+                <div class="left"></div>
+                    <svg class = "graph center" id = "dials" width = "950" height = "500"></svg> 
+                    <div class="right"></div>
+            </div>
+        </div>
+
+        
+    </div>
+
+
+
+    <script>
+        
+        let svg1b = d3.select("#svgb1");
+        let svgWidth = svg1b.attr("width");
+        let svgHeight = svg1b.attr("height");
+
+        let c_data = d3.csv("corrected_spotify.csv", d3.autoType).then((data) => {
+            let fixedData = data; // this might be changed later
+
+            fixedData = fixedData.filter(d => {
+                for (const [key, value] of Object.entries(d)) {
+                    // value = value.replace(/\s/g,'');
+                    if (value === "" || value === "NA" || value === "N/A") {
+                        return false;
+                    }
+                }
+                return true;
+            })
+
+            fixedData.forEach((d) => {
+                for (let key of Object.keys(d)) {
+                    if (key === "Genre") {
+                        let temp = d[key].replace(/'/g, "\"");
+                        d[key] = JSON.parse(temp);
+                    }
+                    else if (key === "WeeksCharted") {
+                        let weeks = d[key]
+                            .split("\n")
+                            .map(x => x.split("--"))
+                            .filter(x => x.length === 2)
+                            .map(x => x.map(y => new Date(y)));
+                        d[key] = weeks;
+                    }
+                    else if (key === "WeekofHighestCharting") {
+                        d[key] = d[key].split("--").map(x => new Date(x));
+                    }
+                }
+            });
+
+            const margin = { top: 10, right: 10, bottom: 50, left: 40, right2: 70 },
+                width = svgWidth - margin.left - margin.right,
+                height = svgHeight - margin.top - margin.bottom;
+
+
+            /**
+            1) filterGenreDf creates a dataframe/dataset of data that contains a specified genre
+            genre--pass in string that represents a particular genre one wants to filter 
+            data--dataset to filter from
+            **/
+            function filterGenreDf(genre, data) {
+                let df = data.filter(d => {
+                    return d['Genre'].includes(genre);
+                });
+                return df;
+            }
+            
+
+            /**
+            filterAbovePopularityDf creates a dataframe/dataset that contains all songs above a specified popularity value
+            pop--popularity value to filter for songs ABOVE
+            data--dataset passed in
+            **/
+            function filterAbovePopularityDf(pop, data) {
+                let df = data.filter(d => {
+                    return d['Popularity'] > pop;
+                });
+                return df;
+            }
+            // Data Frame containing all songs with popularity above 80
+            const dfabove80 = filterAbovePopularityDf(80, fixedData);
+
+            /**
+            countGenreDf creates a dataframe/dataset that has lists the genre and its corresponding count ("Genre", "Count")
+            data--dataset to pass in
+            **/
+            function countGenreDf(data) {
+                let counter = {}
+                data.forEach(d => {
+                    d['Genre'].forEach(g => {
+                        if (g in counter) {
+                            counter[g] = counter[g] + 1;
+                        }
+                        else {
+                            counter[g] = 1;
+                        }
+                    });
+                });
+                let count_df = Object.entries(counter).map(([k, v]) => ({
+                    "Genre": k,
+                    "Count": v
+                }));
+                return count_df;
+            }
+            // Data Frame counting all genres in dfabove80
+            let genreCount = countGenreDf(dfabove80);
+
+
+
+            /**
+             * Function for making bar plots. 
+             * svg: the svg to attach the visuals to
+             * data: the data to read
+             * xObjs: the named categories for the bars
+             * yValues: the variable determining the size of bars
+             * color: the fill color for the bars.
+             **/
+            function makeBarPlot(svg, data, xObjs, yValues, color) {
+                let canvas = svg.append("g").attr("id", "canvas");
+                let graph = canvas.append("g").attr("id", "graph");
+                let annotations = graph.append("g").attr("id", "annotations");
+                // ADDED THESE TWO--TODO MAKE IT LESS CONCRETE
+                const buffer = 25;
+                const bar_width = 20;
+                const bar_radius = 10;
+                const top_buffer = buffer + margin.top;
+                const height_buffer = height - buffer;
+
+
+                let chartArea = graph.append("g").attr("id", "bars")
+                    .attr("transform", "translate(" + margin.left + "," + top_buffer + ")");
+
+                const yExtent = d3.extent(data, (d) => d[yValues]);
+                const genres = d3.map(data, d => d[xObjs]);
+
+                let yScale = d3.scaleLinear()
+                    .domain([0, yExtent[1]])
+                    .range([height_buffer, 0]);
+
+                let xScale = d3.scaleBand()
+                    .domain(genres)
+                    .range([0, width])
+                    .padding(0.05);
+
+                let leftAxis = d3.axisLeft(yScale)
+                    .tickFormat(d3.format(".10"));
+
+                let leftGridlines = d3.axisLeft(yScale)
+                    .tickSize(-width - 10)
+                    .tickFormat("");
+
+
+                annotations.append("g")
+                    .attr("class", "y axis")
+                    .attr("transform", "translate(" + (margin.left - 10) + "," + top_buffer + ")")
+                    .call(leftAxis);
+                annotations.append("g")
+                    .attr("class", "y gridlines")
+                    .attr("transform", "translate(" + (margin.left - 10) + "," + top_buffer + ")")
+                    .call(leftGridlines);
+
+                let bottomAxis = d3.axisBottom(xScale);
+
+                let bottomGridlines = d3.axisBottom(xScale)
+                    .tickSize(-height_buffer - 10)
+                    .tickFormat("");
+
+                annotations.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(" + margin.left + "," + (height_buffer + top_buffer + 10) + ")")
+                    .call(bottomAxis);
+
+                annotations.append("g")
+                    .attr("class", "x gridlines")
+                    .attr("transform", "translate(" + margin.left + "," + (height_buffer + top_buffer + 10) + ")")
+                    .call(bottomGridlines);
+
+               
+                // y axis label
+                canvas.append("text")
+                    .attr("class", "y label")
+                    .attr("text-anchor", "beginning")
+                    .attr("y", 10)
+                    .attr("dy", ".75em")
+                    .attr("transform", "rotate(0)")
+                    .text(yValues.replace(/([a-z])([A-Z])/g, '$1 $2'));
+
+                chartArea.selectAll("rect").data(data)
+                    .join('g')
+                    .attr('class', 'full_bar')
+                    .append("rect")
+                    .attr("x", d => xScale(d[xObjs]) + (xScale.bandwidth() / 2 - bar_width / 2))
+                    .attr("y", d => 0)
+                    .attr('class', 'empty')
+                    .attr("height", d => yScale(0))
+                    .attr("width", bar_width)
+                    .attr("fill", '#0a0b0c')
+                    .attr("rx", bar_radius);
+
+                chartArea.selectAll('g.full_bar').append("rect")
+                    .attr('class', d=>'bar ' +d['type'])
+                    .attr("x", d => xScale(d[xObjs]) + (xScale.bandwidth() / 2 - bar_width / 2))
+                    .attr("y", d => yScale(d[yValues]))
+                    .attr("height", d => yScale(0) - yScale(d[yValues]))
+                    .attr("width", bar_width)
+                    .attr("opacity", 0.9)
+                    .attr("fill", color)
+                    .attr("rx", bar_radius);
+
+                chartArea.selectAll('g.full_bar').append("text")
+                    .attr('class', d=>'bar')
+                    .attr("x", d => xScale(d[xObjs]) + (xScale.bandwidth() / 2 - bar_width / 2 - bar_width / 6))
+                    .attr("y", d => -12)
+                    .attr("text-anchor", "start")
+                    .text(d => d[yValues]);
+                    
+
+
+
+            }
+
+            //let popFilteredData = filterAbovePopularityDf(80, fixedData);
+            let genreFreqData = countGenreDf(fixedData);
+
+
+            //Filters fixedData into pop, latin, and rap categories based on highest frequency genres we deduced
+            let popData = fixedData.filter(d => {
+                return d["Genre"].includes("pop") || d["Genre"].includes("dance pop") || d["Genre"].includes("pop rap") || d["Genre"].includes("post-teen pop");
+            });
+
+            let latinData = fixedData.filter(d => {
+                return d["Genre"].includes("reggaeton") || d["Genre"].includes("latin") || d["Genre"].includes("trap latino");
+            });
+
+            let rapData = fixedData.filter(d => {
+                return d["Genre"].includes("rap") || d["Genre"].includes("trap") || d["Genre"].includes("hip hop");
+            });
+
+            //Adds type parameter to each song in the various categories
+            popData.forEach(d => {d["type"] = "pop";});
+
+            latinData.forEach(d => {d["type"] = "latin";});
+
+            rapData.forEach(d => {d["type"] = "rap";});
+
+            genreFreqData = genreFreqData.sort((a, b) => d3.descending(a["Count"], b["Count"]));
+
+            //top 10 genres in the dataset
+            let topGenre = genreFreqData.slice(0, 10);
+
+            topGenre.forEach(d => {
+                let g = d["Genre"];
+                if (g === "rap" || g === "trap" || g === "hip hop") {
+                    d["type"] = "Rap";
+                } else if (g === "latin" || g === "reggaeton" || g === "trap latino") {
+                    d["type"] = "Latin";
+                } else {
+                    d["type"] = "Pop";
+                }
+            })
+
+            makeBarPlot(svg1b, topGenre, "Genre", "Count", "#01fefe");
+
+
+            // Function + code below was used to create median values for pop, rap, and latin
+            function mediansOfData(data, type) {
+                return d3.median(data, d => d[type]);
+            }
+
+            let typeNum = 4;
+            let types = ["Acousticness", "Energy", "Speechiness", "Danceability"]
+
+            let popMed = {type: "Pop"};
+            let latinMed = {type: "Latin"};
+            let rapMed = {type: "Rap"};
+
+            types.forEach( d => {
+                popMed[d] = mediansOfData(popData, d);
+                latinMed[d] = mediansOfData(latinData, d);
+                rapMed[d] = mediansOfData(rapData, d);
+            });
+
+            // Collective data set of all medians
+            let allMedianData = [popMed, latinMed, rapMed];
+
+            // Style values for gauges to change dimensions and other things
+            const dialDims = {inner: 10, 
+                outer: 70, 
+                startA: -Math.PI * 120 / 180, 
+                endA: Math.PI * 120 / 180, 
+                circleDist: 10,
+                cFill: "black",
+                pathEmpty: "#0a0b0c"
+            };
+
+            // Graph margins for gauge graph
+            const dialMargin = {top: 50, bottom: 0, left: 70, right: 20};
+
+            let dials = d3.select("#dials");
+
+            let dialArea = dials.append("g").attr("id", "dial")
+                .attr("transform", "translate(" + dialMargin.left + "," + dialMargin.top + ")");
+
+            // Scale function to convert parameters into angles
+            let dialScale = d3.scaleLinear().domain([0,1]).range([dialDims.startA,dialDims.endA]);
+
+
+            /**
+             * Creates the gauges / dials for the graph.
+             * svg: the svg to attach the gauges to
+             * xData: the x values / parameters that determine the gauge levels
+             * yData: the y values
+             * numTypes: the number of x values we have (obsolete)
+             **/
+            function makeDials(svg, xData, yData, numTypes) {
+                yData.forEach((y, j) => {
+                    let xDist = (950 - dialMargin.left - dialMargin.right) / numTypes;
+                    let yDist = (500 - dialMargin.top - dialMargin.bottom) / 3;
+                    let row = svg.append("g").attr("transform", "translate(" + 0 + "," + (((j + 1) * yDist) - (yDist / 2)) + ")");
+                    // Label for each broader category
+                    row.append("text")
+                                .attr("class", "dial_label")
+                                .attr("text-anchor", "beginning")
+                                .attr("dominant-baseline", "ideographic")
+                                .attr("x", -50)
+                                .attr("y", 0)
+                                .text(y.type);
+                    xData.forEach((x, i) => {
+                        if (j === 0) {
+                            // Label for each song parameter
+                            row.append("text")
+                                .attr("class", "dial_label")
+                                .attr("text-anchor", "middle")
+                                .attr("dominant-baseline", "ideographic")
+                                .attr("y", -20-yDist / 2)
+                                .attr("x", (((i+1) * xDist) - (xDist / 2)))
+                                .text(x);
+                        }
+                        let thing = row.append("g").attr("transform", "translate(" + (((i+1) * xDist) - (xDist / 2)) + "," + 0 + ")");
+                        thing.append("circle")
+                            .attr("cx", 0)
+                            .attr("cy", 0)
+                            .attr("r", dialDims.outer - dialDims.inner - dialDims.circleDist)
+                            .attr("fill", dialDims.cFill);
+                        // Arc "scaffolds"
+                        let arcF = d3.arc()
+                            .innerRadius(dialDims.outer - dialDims.inner)
+                            .outerRadius(dialDims.outer)
+                            .startAngle(dialScale(0))
+                            .endAngle(dialScale(y[x]));
+
+                        let arcE = d3.arc()
+                            .innerRadius(dialDims.outer - dialDims.inner)
+                            .outerRadius(dialDims.outer)
+                            .startAngle(dialScale(y[x]))
+                            .endAngle(dialScale(1));
+                        
+                        // Attach paths to the arc
+                        thing.append("path")
+                            .attr("class", y.type)
+                            .attr("d", arcF)
+
+                        thing.append("path")
+                            .attr("class", "arc")
+                            .attr("d", arcE)
+                            .attr("fill",dialDims.pathEmpty);
+                        
+                        // Text element
+                        thing.append("text")
+                            .attr("class", "dialText")
+                            .attr("text-anchor", "middle")
+                            .attr("dominant-baseline", "middle")
+                            .style("font-size", ((dialDims.outer - dialDims.inner - dialDims.circleDist) / 2) + "px")
+                            .text(Math.round(y[x] * 100));
+                    });
+                });
+            };
+
+            makeDials(dialArea, types, allMedianData, 4);
+
+            
+
+        })
+    </script>
+</body>
+
+</html>
